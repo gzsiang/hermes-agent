@@ -5,7 +5,7 @@ import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useSta
 import { $delegationState } from '../app/delegationStore.js'
 import { $turnState } from '../app/turnStore.js'
 import { FACES } from '../content/faces.js'
-import { VERBS } from '../content/verbs.js'
+import { VERBS, VERBS_ZH, getVerbs } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
@@ -19,6 +19,7 @@ const HEART_COLORS = ['#ff5fa2', '#ff4d6d']
 function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | number }) {
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
   const [now, setNow] = useState(() => Date.now())
+  const verbs = getVerbs()
 
   useEffect(() => {
     const face = setInterval(() => setTick(n => n + 1), FACE_TICK_MS)
@@ -32,7 +33,7 @@ function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | nu
 
   return (
     <Text color={color}>
-      {FACES[tick % FACES.length]} {VERBS[tick % VERBS.length]}…{startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''}
+      {FACES[tick % FACES.length]} {verbs[tick % verbs.length]}…{startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''}
     </Text>
   )
 }
