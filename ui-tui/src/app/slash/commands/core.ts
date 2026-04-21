@@ -38,7 +38,7 @@ const HELP_ZH: Record<string, string> = {
   retry: '重试上一条用户消息'
 }
 
-const HOTKEYS_ZH = [
+const HOTKEYS_ZH: [string, string][] = [
   ['Ctrl+D', '退出'],
   ['Ctrl+C', '中断'],
   ['Ctrl+K', '清屏'],
@@ -55,7 +55,7 @@ const HOTKEYS_ZH = [
   ['Ctrl+M', '切换紧凑模式'],
   ['Ctrl+Q', '退出'],
   ['Ctrl+P', '粘贴剪贴板图片']
-] as const
+]
 
 const flagFromArg = (arg: string, current: boolean): boolean | null => {
   if (!arg) {
