@@ -16,14 +16,18 @@ Key design decisions:
 
 import json
 import logging
+import math
 import random
 import re
 import sqlite3
 import threading
 import time
+import struct
+import urllib.parse
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+
 from hermes_constants import get_hermes_home
-from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,7 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -83,7 +87,8 @@ CREATE TABLE IF NOT EXISTS messages (
     reasoning TEXT,
     reasoning_content TEXT,
     reasoning_details TEXT,
-    codex_reasoning_items TEXT
+    codex_reasoning_items TEXT,
+    embedding BLOB
 );
 
 CREATE TABLE IF NOT EXISTS state_meta (
@@ -117,6 +122,105 @@ CREATE TRIGGER IF NOT EXISTS messages_fts_update AFTER UPDATE ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
 END;
 """
+
+# ── Embedding configuration ──
+# Default Ollama-compatible embedding endpoint.
+# Override via HERMES_EMBEDDING_URL env var or config.yaml embedding section.
+EMBEDDING_MODEL = "qwen3-embedding:0.6b"
+EMBEDDING_DIM = 1024
+_DEFAULT_EMBEDDING_URL = "http://2080ti:8081"
+
+
+def _get_embedding_url() -> str:
+    """Return the configured embedding service URL."""
+    import os
+    env_url = os.environ.get("HERMES_EMBEDDING_URL", "").strip()
+    if env_url:
+        return env_url
+    # Try to read from config.yaml if available
+    try:
+        import yaml
+        for cfg_path in [Path.home() / ".hermes" / "config.yaml",
+                         Path("/etc/hermes/config.yaml")]:
+            if cfg_path.exists():
+                with open(cfg_path) as f:
+                    cfg = yaml.safe_load(f) or {}
+                url = (cfg.get("auxiliary", {})
+                                 .get("embedding", {})
+                                 .get("url", ""))
+                if url:
+                    return url
+    except Exception:
+        pass
+    return _DEFAULT_EMBEDDING_URL
+
+
+def _compute_embedding(text: str, url: str = None, model: str = None) -> Optional[List[float]]:
+    """Call the Ollama-compatible embedding API and return the embedding vector.
+
+    Returns None on failure (never raises).
+    """
+    if not text or not text.strip():
+        return None
+
+    url = url or _get_embedding_url()
+    model = model or EMBEDDING_MODEL
+
+    import urllib.request
+    import ssl
+
+    payload = json.dumps({
+        "model": model,
+        "input": text[:8000],  # safety cap — truncate very long messages
+        "truncate": True,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{url}/v1/embeddings",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    # Allow self-signed certs (common for local GPU servers)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        # Ollama OpenAI-compatible format:
+        # {"data": [{"embedding": [0.01, -0.02, ...]}], "model": "...", "usage": {...}}
+        embeddings = data.get("data", [])
+        if embeddings:
+            return embeddings[0].get("embedding")
+        return None
+    except Exception as exc:
+        logger.debug("Embedding computation failed for text len=%d: %s", len(text), exc)
+        return None
+
+
+def _serialize_embedding(vec: List[float]) -> bytes:
+    """Pack a list of floats into a compact binary blob (float32 big-endian)."""
+    return struct.pack(f">{len(vec)}f", *vec)
+
+
+def _deserialize_embedding(blob: bytes) -> List[float]:
+    """Unpack a float32 big-endian blob back into a list of floats."""
+    n = len(blob) // 4
+    return list(struct.unpack(f">{n}f", blob[:n * 4]))
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
 
 
 class SessionDB:
@@ -356,6 +460,14 @@ class SessionDB:
                 except sqlite3.OperationalError:
                     pass  # Column already exists
                 cursor.execute("UPDATE schema_version SET version = 8")
+            if current_version < 9:
+                # v9: add embedding BLOB column to messages for semantic search.
+                # 1024 floats × 4 bytes = 4096 bytes per embedding.
+                try:
+                    cursor.execute('ALTER TABLE messages ADD COLUMN "embedding" BLOB')
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+                cursor.execute("UPDATE schema_version SET version = 9")
 
         # Unique title index — always ensure it exists (safe to run after migrations
         # since the title column is guaranteed to exist at this point)
@@ -956,6 +1068,7 @@ class SessionDB:
         reasoning_content: str = None,
         reasoning_details: Any = None,
         codex_reasoning_items: Any = None,
+        compute_embedding: bool = True,
     ) -> int:
         """
         Append a message to a session. Returns the message row ID.
@@ -979,12 +1092,23 @@ class SessionDB:
         if tool_calls is not None:
             num_tool_calls = len(tool_calls) if isinstance(tool_calls, list) else 1
 
+        # Pre-compute embedding outside the write txn (HTTP I/O)
+        embedding_blob = None
+        if compute_embedding and role == "assistant" and content and content.strip():
+            try:
+                emb = _compute_embedding(content)
+                if emb:
+                    embedding_blob = _serialize_embedding(emb)
+            except Exception as exc:
+                logger.debug("Failed to compute embedding for msg: %s", exc)
+
         def _do(conn):
             cursor = conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
+                   embedding)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -999,6 +1123,7 @@ class SessionDB:
                     reasoning_content,
                     reasoning_details_json,
                     codex_items_json,
+                    embedding_blob,
                 ),
             )
             msg_id = cursor.lastrowid
