@@ -1143,30 +1143,6 @@ def _wire_callbacks(sid: str):
     set_secret_capture_callback(secret_cb)
 
 
-def _resolve_personality_prompt(cfg: dict) -> str:
-    """Resolve the active personality into a system prompt string."""
-    name = ((cfg.get("display") or {}).get("personality", "") or "").strip().lower()
-    if not name or name in ("default", "none", "neutral"):
-        return ""
-    try:
-        from cli import load_cli_config
-
-        personalities = (load_cli_config().get("agent") or {}).get("personalities", {}) or {}
-    except Exception:
-        try:
-            from hermes_cli.config import load_config as _load_full_cfg
-
-            personalities = (
-                (_load_full_cfg().get("agent") or {}).get("personalities", {}) or {}
-            )
-        except Exception:
-            personalities = (cfg.get("agent") or {}).get("personalities", {}) or {}
-    pval = personalities.get(name)
-    if pval is None:
-        return ""
-    return _render_personality_prompt(pval)
-
-
 def _render_personality_prompt(value) -> str:
     if isinstance(value, dict):
         parts = [value.get("system_prompt", "")]
@@ -1300,9 +1276,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     from hermes_cli.runtime_provider import resolve_runtime_provider
 
     cfg = _load_cfg()
-    system_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
-    if not system_prompt:
-        system_prompt = _resolve_personality_prompt(cfg)
+    system_prompt = ((cfg.get("agent") or {}).get("system_prompt", "") or "").strip()
     runtime = resolve_runtime_provider(requested=None)
     return AIAgent(
         model=_resolve_model(),
@@ -2815,6 +2789,23 @@ def _(rid, params: dict) -> dict:
         _write_config_key("display.tui_statusbar", nv)
         return _ok(rid, {"key": key, "value": nv})
 
+    if key == "mouse":
+        raw = str(value or "").strip().lower()
+        display = _load_cfg().get("display") if isinstance(_load_cfg().get("display"), dict) else {}
+        current = bool(display.get("tui_mouse", True))
+
+        if raw in ("", "toggle"):
+            nv = not current
+        elif raw == "on":
+            nv = True
+        elif raw == "off":
+            nv = False
+        else:
+            return _err(rid, 4002, f"unknown mouse value: {value}")
+
+        _write_config_key("display.tui_mouse", nv)
+        return _ok(rid, {"key": key, "value": "on" if nv else "off"})
+
     if key in ("prompt", "personality", "skin"):
         try:
             cfg = _load_cfg()
@@ -2943,6 +2934,10 @@ def _(rid, params: dict) -> dict:
             display.get("tui_statusbar", "top") if isinstance(display, dict) else "top"
         )
         return _ok(rid, {"value": _coerce_statusbar(raw)})
+    if key == "mouse":
+        display = _load_cfg().get("display")
+        on = display.get("tui_mouse", True) if isinstance(display, dict) else True
+        return _ok(rid, {"value": "on" if on else "off"})
     if key == "mtime":
         cfg_path = _hermes_home / "config.yaml"
         try:
