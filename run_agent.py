@@ -7366,7 +7366,6 @@ class AIAgent:
         """
         return self.api_mode != "codex_responses"
 
-<<<<<<< HEAD
     def flush_memories(self, messages: list = None, min_turns: int = None):
         """Give the model one turn to persist memories before context is lost.
 
@@ -7555,8 +7554,6 @@ class AIAgent:
             if messages and messages[-1].get("_flush_sentinel") == _sentinel:
                 messages.pop()
 
-=======
->>>>>>> pr-15282
     def _compress_context(self, messages: list, system_message: str, *, approx_tokens: int = None, task_id: str = "default", focus_topic: str = None) -> tuple:
         """Compress conversation context and split the session in SQLite.
 
