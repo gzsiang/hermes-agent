@@ -479,11 +479,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     if session_id:
         session_label = _t("session") if _lang.startswith("zh") else "Session"
         left_lines.append(f"[dim {session_color}]{session_label}: {session_id}[/]")
-    def _t(key: str) -> str:
-        """Translate banner text to Chinese if configured."""
-        if _lang.startswith("zh"):
-            return _BANNER_ZH.get(key, key)
-        return key
+    left_content = "\n".join(left_lines)
     
     right_lines = [f"[bold {accent}]{_t('available_tools')}[/]"]
     toolsets_dict: Dict[str, list] = {}
