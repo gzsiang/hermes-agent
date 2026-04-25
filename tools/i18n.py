@@ -127,6 +127,27 @@ def format_zh(text: str, **kwargs) -> str:
         # General
         "messages": "条消息",
         "messages...": "条消息...",
+
+        # Gateway notifications
+        "Still working...": "仍在工作中...",
+        "min elapsed": "分钟已过",
+        "iteration": "迭代",
+        "running:": "运行中:",
+        "waiting for non-streaming API response": "等待非流式 API 响应",
+        "waiting for provider response (streaming)": "等待供应商响应（流式）",
+        "waiting for stream response": "等待流式响应",
+        "s, no chunks yet": "秒，尚无数据块",
+        "starting new turn (cached)": "开始新轮次（缓存）",
+        "initializing": "初始化中",
+
+        # Home channel
+        "No home channel is set for": "{0} 未设置主频道",
+        "A home channel is where Hermes delivers cron job results": "主频道是 Hermes 投递定时任务结果和跨平台消息的地方",
+        "Type /sethome to make this chat your home channel,": "输入 /sethome 将此聊天设为主频道，",
+        "or ignore to skip.": "或忽略以跳过。",
+
+        # Banner
+        "Session:": "会话:",
     }
     
     if not is_chinese():
