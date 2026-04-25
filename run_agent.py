@@ -1434,7 +1434,6 @@ class AIAgent:
         self._memory_enabled = False
         self._user_profile_enabled = False
         self._memory_nudge_interval = 10
-        self._memory_flush_min_turns = 6
         self._turns_since_memory = 0
         self._iters_since_skill = 0
         # Circuit breaker: detect and break infinite tool-call loops.
@@ -1454,7 +1453,6 @@ class AIAgent:
                 self._memory_enabled = mem_config.get("memory_enabled", False)
                 self._user_profile_enabled = mem_config.get("user_profile_enabled", False)
                 self._memory_nudge_interval = int(mem_config.get("nudge_interval", 10))
-                self._memory_flush_min_turns = int(mem_config.get("flush_min_turns", 6))
                 if self._memory_enabled or self._user_profile_enabled:
                     from tools.memory_tool import MemoryStore
                     self._memory_store = MemoryStore(
@@ -2387,6 +2385,7 @@ class AIAgent:
                 base_url=aux_base_url,
                 api_key=aux_api_key,
                 config_context_length=getattr(self, "_aux_compression_context_length_config", None),
+                provider=getattr(self, "provider", ""),
             )
 
             # Hard floor: the auxiliary compression model must have at least
@@ -2413,6 +2412,11 @@ class AIAgent:
                 # compression actually works this session.  The hard floor
                 # above guarantees aux_context >= MINIMUM_CONTEXT_LENGTH,
                 # so the new threshold is always >= 64K.
+                #
+                # The compression summariser sends a single user-role
+                # prompt (no system prompt, no tools) to the aux model, so
+                # new_threshold == aux_context is safe: the request is
+                # the raw messages plus a small summarisation instruction.
                 old_threshold = threshold
                 new_threshold = aux_context
                 self.context_compressor.threshold_tokens = new_threshold
@@ -4913,6 +4917,8 @@ class AIAgent:
         # response.incomplete instead of response.completed).
         self._codex_streamed_text_parts: list = []
         for attempt in range(max_stream_retries + 1):
+            if self._interrupt_requested:
+                raise InterruptedError("Agent interrupted before Codex stream retry")
             collected_output_items: list = []
             try:
                 with active_client.responses.stream(**api_kwargs) as stream:
@@ -6002,6 +6008,14 @@ class AIAgent:
 
             try:
                 for _stream_attempt in range(_max_stream_retries + 1):
+                    # Check for interrupt before each retry attempt.  Without
+                    # this, /stop closes the HTTP connection (outer poll loop),
+                    # but the retry loop opens a FRESH connection — negating the
+                    # interrupt entirely.  On slow providers (ollama-cloud) each
+                    # retry can block for the full stream-read timeout (120s+),
+                    # causing multi-minute delays between /stop and response.
+                    if self._interrupt_requested:
+                        raise InterruptedError("Agent interrupted before stream retry")
                     try:
                         if self.api_mode == "anthropic_messages":
                             self._try_refresh_anthropic_client_credentials()
@@ -7352,6 +7366,7 @@ class AIAgent:
         """
         return self.api_mode != "codex_responses"
 
+<<<<<<< HEAD
     def flush_memories(self, messages: list = None, min_turns: int = None):
         """Give the model one turn to persist memories before context is lost.
 
@@ -7540,6 +7555,8 @@ class AIAgent:
             if messages and messages[-1].get("_flush_sentinel") == _sentinel:
                 messages.pop()
 
+=======
+>>>>>>> pr-15282
     def _compress_context(self, messages: list, system_message: str, *, approx_tokens: int = None, task_id: str = "default", focus_topic: str = None) -> tuple:
         """Compress conversation context and split the session in SQLite.
 
@@ -7558,8 +7575,6 @@ class AIAgent:
             f"{approx_tokens:,}" if approx_tokens else "unknown", self.model,
             focus_topic,
         )
-        # Pre-compression memory flush: let the model save memories before they're lost
-        self.flush_memories(messages, min_turns=0)
 
         # Notify external memory provider before compression discards context
         if self._memory_manager:
