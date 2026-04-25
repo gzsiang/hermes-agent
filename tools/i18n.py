@@ -57,6 +57,15 @@ def format_zh(text: str, **kwargs) -> str:
         "正在压缩 10 条消息..."  # if language is zh
         "Compressing 10 messages..."  # if language is en
     """
+    # Full-message translations (checked first)
+    full_translations = {
+        '📬 No home channel is set for {name}. A home channel is where Hermes delivers cron job results and cross-platform messages.\n\nType /sethome to make this chat your home channel, or ignore to skip.':
+            '📬 {name} 未设置主频道。\n\n主频道是 Hermes 投递定时任务结果和跨平台消息的地方。\n\n输入 /sethome 将此聊天设为主频道，\n或忽略以跳过。',
+
+        '⏳ Still working... ({elapsed} min elapsed{detail})':
+            '⏳ 仍在工作中...（已运行 {elapsed} 分钟{detail})',
+    }
+
     translations = {
         # Compression feedback
         "Compressing": "正在压缩",
@@ -160,7 +169,17 @@ def format_zh(text: str, **kwargs) -> str:
         return text
     
     # Chinese - translate and format
-    # First, do simple string replacements for known phrases
+    # 1. Check full-message translations first
+    if text in full_translations:
+        result = full_translations[text]
+        if kwargs:
+            try:
+                return result.format(**kwargs)
+            except (KeyError, ValueError):
+                return result
+        return result
+
+    # 2. Fall back to substring replacements for known phrases
     result = text
     for en, zh in translations.items():
         if en in result:
