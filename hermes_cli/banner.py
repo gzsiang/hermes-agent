@@ -458,6 +458,15 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     except Exception:
         _bskin = None
         _hero = HERMES_CADUCEUS
+    # Detect language for banner text (needed early for Session label)
+    _lang = _detect_cli_language()
+
+    def _t(key: str) -> str:
+        """Translate banner text to Chinese if configured."""
+        if _lang.startswith("zh"):
+            return _BANNER_ZH.get(key, key)
+        return key
+
     left_lines = ["", _hero, ""]
     model_short = model.split("/")[-1] if "/" in model else model
     if model_short.endswith(".gguf"):
@@ -468,12 +477,8 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
     left_lines.append(f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]")
     left_lines.append(f"[dim {dim}]{cwd}[/]")
     if session_id:
-        left_lines.append(f"[dim {session_color}]Session: {session_id}[/]")
-    left_content = "\n".join(left_lines)
-
-    # Detect language for banner text
-    _lang = _detect_cli_language()
-    
+        session_label = _t("session") if _lang.startswith("zh") else "Session"
+        left_lines.append(f"[dim {session_color}]{session_label}: {session_id}[/]")
     def _t(key: str) -> str:
         """Translate banner text to Chinese if configured."""
         if _lang.startswith("zh"):
