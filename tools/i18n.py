@@ -64,6 +64,9 @@ def format_zh(text: str, **kwargs) -> str:
 
         '⏳ Still working... ({elapsed} min elapsed{detail})':
             '⏳ 仍在工作中...（已运行 {elapsed} 分钟{detail})',
+
+        'Sending after interrupt: \'{preview}\'':
+            '中断后发送：\'{preview}\'',
     }
 
     translations = {
@@ -157,6 +160,10 @@ def format_zh(text: str, **kwargs) -> str:
 
         # Banner
         "Session:": "会话:",
+
+        # Interrupt messages
+        "New message detected, interrupting...": "检测到新消息，正在中断...",
+        "Sending after interrupt:": "中断后发送：",
     }
     
     if not is_chinese():

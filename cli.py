@@ -8539,7 +8539,7 @@ class HermesCLI:
                             # But if it does (race condition), don't interrupt.
                             if self._clarify_state or self._clarify_freetext:
                                 continue
-                            print("\n⚡ New message detected, interrupting...")
+                            print("\n⚡ " + format_zh("New message detected, interrupting..."))
                             # Signal TTS to stop on interrupt
                             if stop_event is not None:
                                 stop_event.set()
@@ -8790,7 +8790,7 @@ class HermesCLI:
                 if n > 1:
                     print(f"\n⚡ Sending {n} messages after interrupt: '{preview}'")
                 else:
-                    print(f"\n⚡ Sending after interrupt: '{preview}'")
+                    print("\n⚡ " + format_zh("Sending after interrupt: '{preview}'", preview=preview))
                 self._pending_input.put(combined)
 
             # If a /steer was left over (agent finished before another tool
