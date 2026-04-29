@@ -197,9 +197,26 @@ _POWERSHELL_EXTRACT_IMAGE_SCRIPTS = (
 
 
 def _run_powershell(exe: str, script: str, timeout: int) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    proc = subprocess.Popen(
         [exe, "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=timeout,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # WSL 下 terminate() 可能无法终止 Windows 进程，
+        # 所以先 terminate，再 kill 确保清理
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        raise
+    return subprocess.CompletedProcess(
+        args=proc.args, returncode=proc.returncode,
+        stdout=stdout.decode(errors="replace") if stdout else "",
+        stderr=stderr.decode(errors="replace") if stderr else "",
     )
 
 
